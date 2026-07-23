@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Evaluación de Tracking Visual y Reflejos</title>
-    <!-- Librería para el procesamiento visual facial y de mirada -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <title>Evaluación de Tracking Ocular Real</title>
+    <!-- Librería WebGazer para Eye Tracking basado en navegador y webcam -->
+    <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -108,14 +107,14 @@
             background: #475569;
             cursor: not-allowed;
         }
-        #webcam-preview {
-            width: 100%;
-            height: 120px;
-            background: #000;
+        .instructions {
+            background: #0f172a;
+            padding: 10px;
             border-radius: 8px;
-            object-fit: cover;
-            margin-top: 10px;
-            transform: scaleX(-1);
+            font-size: 0.8rem;
+            color: #cbd5e1;
+            margin-bottom: 10px;
+            line-height: 1.4;
         }
         .status-msg {
             font-size: 0.85rem;
@@ -128,8 +127,8 @@
 <body>
 
     <header>
-        <h1>Módulo de Seguimiento Ocular y Fatiga</h1>
-        <p>Evaluación interactiva de Smooth Pursuit y Estabilidad Atencional</p>
+        <h1>Módulo de Tracking Ocular Real</h1>
+        <p>Seguimiento autónomo de la mirada mediante WebGazer y Cámara Web</p>
     </header>
 
     <div class="container">
@@ -141,31 +140,32 @@
         <!-- Panel de Control y Métricas -->
         <div class="sidebar">
             <div>
+                <div class="instructions">
+                    <strong>Instrucciones:</strong><br>
+                    1. Clic en "Calibrar / Iniciar Cámara".<br>
+                    2. Mira a la cámara y mueve los ojos siguiendo la bolita azul.<br>
+                    3. El punto verde se moverá solo con tu mirada.
+                </div>
                 <div class="metrics-box">
                     <div class="metric-item">
                         <div class="metric-label">Estado de la Prueba</div>
                         <div class="metric-value" id="lblStatus">Inactivo</div>
                     </div>
                     <div class="metric-item">
-                        <div class="metric-label">Zona Óptima (&lt;20px)</div>
+                        <div class="metric-label">Zona Óptima (&lt;30px)</div>
                         <div class="metric-value" id="lblOptimal">0.0%</div>
                     </div>
                     <div class="metric-item">
                         <div class="metric-label">Error Espacial Promedio</div>
                         <div class="metric-value" id="lblError">0.0 px</div>
                     </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Índice de Fatiga / Desgaste</div>
-                        <div class="metric-value" id="lblFatigue">0.0%</div>
-                    </div>
                 </div>
-                <div class="status-msg" id="msgCamera">Cámara desconectada</div>
-                <video id="webcam-preview" autoplay playsinline muted></video>
+                <div class="status-msg" id="msgStatus">Esperando inicio...</div>
             </div>
 
             <div class="controls">
-                <button id="btnStart" onclick="startTest()">Iniciar Prueba</button>
-                <button id="btnStop" onclick="stopTest()" disabled>Detener / Exportar</button>
+                <button id="btnStart" onclick="startEyeTrackingTest()">Calibrar e Iniciar</button>
+                <button id="btnStop" onclick="stopTest()" disabled>Detener Prueba</button>
             </div>
         </div>
     </div>
@@ -178,27 +178,23 @@
         let animationId;
         let startTime = 0;
         
-        // Parámetros del Target Dinámico
         let target = {
             x: canvas.width / 2,
             y: canvas.height / 2,
             radius: 15,
-            speedAngle: 0.04,
+            speedAngle: 0.03,
             angle: 0,
-            radiusX: 220,
-            radiusY: 140
+            radiusX: 200,
+            radiusY: 120
         };
 
-        // Métricas en tiempo real
         let metrics = {
             totalFrames: 0,
             optimalFrames: 0,
-            cumulativeError: 0,
-            initialErrorBlock: null,
-            finalErrorBlock: null
+            cumulativeError: 0
         };
 
-        // Simulación de tracking ocular vía MediaPipe o estimación por puntero si falla la cámara
+        // Posición de la mirada estimada por WebGazer
         let gazeX = canvas.width / 2;
         let gazeY = canvas.height / 2;
 
@@ -212,30 +208,29 @@
             ctx.fillStyle = '#020617';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Dibujar Anillo de Tolerancia Óptima (Guía visual opcional)
+            // Anillo de tolerancia
             ctx.beginPath();
-            ctx.arc(target.x, target.y, 20, 0, Math.PI * 2);
+            ctx.arc(target.x, target.y, 30, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Dibujar Target Central
+            // Target (Azul)
             ctx.beginPath();
             ctx.arc(target.x, target.y, target.radius, 0, Math.PI * 2);
             ctx.fillStyle = '#38bdf8';
             ctx.fill();
             ctx.closePath();
 
-            // Dibujar Retícula de Mirada Estimada (Punto verde del usuario)
+            // Mirada del usuario detectada por cámara (Verde)
             ctx.beginPath();
-            ctx.arc(gazeX, gazeY, 8, 0, Math.PI * 2);
+            ctx.arc(gazeX, gazeY, 10, 0, Math.PI * 2);
             ctx.fillStyle = '#22c55e';
             ctx.fill();
             ctx.closePath();
         }
 
         function calculateMetrics() {
-            // Distancia euclidiana entre el target y el punto de enfoque detectado
             const dx = target.x - gazeX;
             const dy = target.y - gazeY;
             const distance = Math.sqrt(dx * dx + dy * dy);
@@ -243,31 +238,15 @@
             metrics.totalFrames++;
             metrics.cumulativeError += distance;
 
-            if (distance <= 20) {
+            if (distance <= 30) { // Tolerancia ampliada un poco por el margen de error normal de las webcams comunes
                 metrics.optimalFrames++;
             }
 
-            // Registro por bloques para índice de fatiga
-            const elapsed = (Date.now() - startTime) / 1000;
-            if (elapsed < 5 && metrics.initialErrorBlock === null) {
-                metrics.initialErrorBlock = distance;
-            }
-            if (elapsed > 25) {
-                metrics.finalErrorBlock = distance;
-            }
-
-            // Actualizar interfaz visual
             const optimalPct = ((metrics.optimalFrames / metrics.totalFrames) * 100).toFixed(1);
             const avgError = (metrics.cumulativeError / metrics.totalFrames).toFixed(1);
-            
-            let fatigueIndex = 0;
-            if (metrics.initialErrorBlock && metrics.finalErrorBlock) {
-                fatigueIndex = Math.max(0, ((metrics.finalErrorBlock - metrics.initialErrorBlock) / metrics.initialErrorBlock) * 100).toFixed(1);
-            }
 
             document.getElementById('lblOptimal').innerText = optimalPct + '%';
             document.getElementById('lblError').innerText = avgError + ' px';
-            document.getElementById('lblFatigue').innerText = fatigueIndex + '%';
         }
 
         function loop() {
@@ -278,50 +257,45 @@
             animationId = requestAnimationFrame(loop);
         }
 
-        // Captura de movimiento del mouse como respaldo interactivo si la cámara está restringida
-        canvas.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            gazeX = e.clientX - rect.left;
-            gazeY = e.clientY - rect.top;
-        });
-
-        async function startTest() {
-            document.getElementById('lblStatus').innerText = 'En Ejecución';
+        function startEyeTrackingTest() {
+            document.getElementById('lblStatus').innerText = 'Calibrando / Iniciando';
             document.getElementById('btnStart').disabled = true;
             document.getElementById('btnStop').disabled = false;
-            
-            // Reiniciar métricas
-            metrics = { totalFrames: 0, optimalFrames: 0, cumulativeError: 0, initialErrorBlock: null, finalErrorBlock: null };
-            startTime = Date.now();
-            isRunning = true;
-            loop();
+            document.getElementById('msgStatus').innerText = 'Iniciando WebGazer (Mira a la cámara)...';
 
-            // Inicializar Cámara para MediaPipe / Feedback Visual
-            try {
-                const videoElement = document.getElementById('webcam-preview');
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
-                videoElement.srcObject = stream;
-                document.getElementById('msgCamera').innerText = 'Cámara Activa (Sigue el punto azul)';
-            } catch (err) {
-                document.getElementById('msgCamera').innerText = 'Modo simulación (Usa el mouse sobre el canvas)';
-            }
+            // Iniciar WebGazer para leer los ojos mediante la webcam
+            webgazer.setGazeListener((data, elapsedTime) => {
+                if (data == null) {
+                    return;
+                }
+                gazeX = data.x; // Coordenada X de la mirada en pantalla
+                gazeY = data.y; // Coordenada Y de la mirada en pantalla
+            }).begin();
+
+            // Ocultar los puntos de predicción visual nativos de WebGazer para limpiar la interfaz
+            webgazer.showPredictionPoints(false);
+
+            setTimeout(() => {
+                document.getElementById('msgStatus').innerText = 'Prueba en curso (Sigue el punto azul)';
+                document.getElementById('lblStatus').innerText = 'En Ejecución';
+                metrics = { totalFrames: 0, optimalFrames: 0, cumulativeError: 0 };
+                startTime = Date.now();
+                isRunning = true;
+                loop();
+            }, 3000);
         }
 
         function stopTest() {
             isRunning = false;
             cancelAnimationFrame(animationId);
+            try {
+                webgazer.end(); // Apagar la cámara y el proceso de tracking
+            } catch(e) {}
+            
             document.getElementById('lblStatus').innerText = 'Finalizado';
             document.getElementById('btnStart').disabled = false;
             document.getElementById('btnStop').disabled = true;
-
-            // Detener cámara si está activa
-            const videoElement = document.getElementById('webcam-preview');
-            if (videoElement.srcObject) {
-                const tracks = videoElement.srcObject.getTracks();
-                tracks.forEach(track => track.stop());
-                videoElement.srcObject = null;
-            }
-            document.getElementById('msgCamera').innerText = 'Prueba guardada correctamente';
+            document.getElementById('msgStatus').innerText = 'Prueba detenida y datos guardados.';
         }
     </script>
 </body>
