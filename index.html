@@ -2,16 +2,17 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Evaluación de Tracking Ocular Real</title>
-    <!-- Librería WebGazer para Eye Tracking basado en navegador y webcam -->
-    <script src="https://webgazer.cs.brown.edu/webgazer.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Evaluación de Tracking Visual</title>
     <style>
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
             font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            /* Evita comportamientos extraños de zoom y selección en móviles */
+            -webkit-user-select: none;
+            user-select: none;
         }
         body {
             background-color: #0f172a;
@@ -19,29 +20,30 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: flex-start;
             min-height: 100vh;
-            padding: 20px;
+            padding: 10px;
         }
         header {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
         }
         h1 {
-            font-size: 1.5rem;
+            font-size: 1.2rem;
             color: #38bdf8;
-            margin-bottom: 5px;
+            margin-bottom: 2px;
         }
         p {
             color: #94a3b8;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
         }
         .container {
             display: flex;
-            gap: 20px;
-            max-width: 1100px;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 450px;
             width: 100%;
-            flex-wrap: wrap;
-            justify-content: center;
+            align-items: center;
         }
         .canvas-container {
             position: relative;
@@ -50,53 +52,62 @@
             overflow: hidden;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
             border: 1px solid #334155;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            /* Bloquea el scroll de la página al tocar el canvas */
+            touch-action: none; 
         }
         canvas {
+            width: 100%;
+            height: 100%;
             display: block;
             background: #020617;
         }
-        .sidebar {
+        .panel {
             background: #1e293b;
-            padding: 20px;
+            padding: 12px;
             border-radius: 12px;
-            width: 320px;
+            width: 100%;
             border: 1px solid #334155;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            gap: 10px;
         }
-        .metrics-box {
-            margin-bottom: 15px;
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
         }
         .metric-item {
             background: #0f172a;
-            padding: 10px 12px;
+            padding: 8px;
             border-radius: 8px;
-            margin-bottom: 8px;
-            border-left: 4px solid #38bdf8;
+            border-left: 3px solid #38bdf8;
+            text-align: center;
         }
         .metric-label {
-            font-size: 0.75rem;
+            font-size: 0.65rem;
             color: #94a3b8;
             text-transform: uppercase;
         }
         .metric-value {
-            font-size: 1.2rem;
+            font-size: 1rem;
             font-weight: bold;
             color: #f8fafc;
         }
         .controls {
             display: flex;
-            flex-direction: column;
             gap: 10px;
         }
         button {
+            flex: 1;
             background: #0284c7;
             color: white;
             border: none;
-            padding: 12px;
+            padding: 10px;
             border-radius: 8px;
             font-weight: bold;
+            font-size: 0.9rem;
             cursor: pointer;
             transition: background 0.2s;
         }
@@ -107,65 +118,57 @@
             background: #475569;
             cursor: not-allowed;
         }
-        .instructions {
-            background: #0f172a;
-            padding: 10px;
-            border-radius: 8px;
-            font-size: 0.8rem;
-            color: #cbd5e1;
-            margin-bottom: 10px;
-            line-height: 1.4;
+        #btnStop {
+            background: #475569;
+        }
+        #btnStop:not(:disabled) {
+            background: #e11d48;
+        }
+        #btnStop:not(:disabled):hover {
+            background: #be123c;
         }
         .status-msg {
-            font-size: 0.85rem;
+            font-size: 0.75rem;
             text-align: center;
             color: #fbbf24;
-            margin-top: 8px;
         }
     </style>
 </head>
 <body>
 
     <header>
-        <h1>Módulo de Tracking Ocular Real</h1>
-        <p>Seguimiento autónomo de la mirada mediante WebGazer y Cámara Web</p>
+        <h1>Evaluación Visuo-Motora</h1>
+        <p>Mantén el punto verde sobre la bolita azul</p>
     </header>
 
     <div class="container">
-        <!-- Pantalla del Test Visual -->
+        <!-- Pantalla del Test Visual (Área táctil optimizada) -->
         <div class="canvas-container">
-            <canvas id="testCanvas" width="640" height="480"></canvas>
+            <canvas id="testCanvas" width="400" height="300"></canvas>
         </div>
 
-        <!-- Panel de Control y Métricas -->
-        <div class="sidebar">
-            <div>
-                <div class="instructions">
-                    <strong>Instrucciones:</strong><br>
-                    1. Clic en "Calibrar / Iniciar Cámara".<br>
-                    2. Mira a la cámara y mueve los ojos siguiendo la bolita azul.<br>
-                    3. El punto verde se moverá solo con tu mirada.
+        <!-- Panel de Control y Métricas Compacto -->
+        <div class="panel">
+            <div class="metrics-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Zona Óptima</div>
+                    <div class="metric-value" id="lblOptimal">0%</div>
                 </div>
-                <div class="metrics-box">
-                    <div class="metric-item">
-                        <div class="metric-label">Estado de la Prueba</div>
-                        <div class="metric-value" id="lblStatus">Inactivo</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Zona Óptima (&lt;30px)</div>
-                        <div class="metric-value" id="lblOptimal">0.0%</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Error Espacial Promedio</div>
-                        <div class="metric-value" id="lblError">0.0 px</div>
-                    </div>
+                <div class="metric-item">
+                    <div class="metric-label">Error Prom.</div>
+                    <div class="metric-value" id="lblError">0 px</div>
                 </div>
-                <div class="status-msg" id="msgStatus">Esperando inicio...</div>
+                <div class="metric-item">
+                    <div class="metric-label">Fatiga</div>
+                    <div class="metric-value" id="lblFatigue">0%</div>
+                </div>
             </div>
 
+            <div class="status-msg" id="lblStatus">Estado: Listo para iniciar</div>
+
             <div class="controls">
-                <button id="btnStart" onclick="startEyeTrackingTest()">Calibrar e Iniciar</button>
-                <button id="btnStop" onclick="stopTest()" disabled>Detener Prueba</button>
+                <button id="btnStart" onclick="startTest()">Iniciar</button>
+                <button id="btnStop" onclick="stopTest()" disabled>Detener</button>
             </div>
         </div>
     </div>
@@ -181,20 +184,22 @@
         let target = {
             x: canvas.width / 2,
             y: canvas.height / 2,
-            radius: 15,
-            speedAngle: 0.03,
+            radius: 14,
+            speedAngle: 0.035,
             angle: 0,
-            radiusX: 200,
-            radiusY: 120
+            radiusX: 130,
+            radiusY: 85
         };
 
         let metrics = {
             totalFrames: 0,
             optimalFrames: 0,
-            cumulativeError: 0
+            cumulativeError: 0,
+            initialErrorBlock: null,
+            finalErrorBlock: null
         };
 
-        // Posición de la mirada estimada por WebGazer
+        // Posición inicial del cursor/dedo al centro
         let gazeX = canvas.width / 2;
         let gazeY = canvas.height / 2;
 
@@ -208,10 +213,10 @@
             ctx.fillStyle = '#020617';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Anillo de tolerancia
+            // Anillo de tolerancia óptima
             ctx.beginPath();
-            ctx.arc(target.x, target.y, 30, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+            ctx.arc(target.x, target.y, 25, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
             ctx.lineWidth = 2;
             ctx.stroke();
 
@@ -222,9 +227,9 @@
             ctx.fill();
             ctx.closePath();
 
-            // Mirada del usuario detectada por cámara (Verde)
+            // Seguimiento del usuario (Verde)
             ctx.beginPath();
-            ctx.arc(gazeX, gazeY, 10, 0, Math.PI * 2);
+            ctx.arc(gazeX, gazeY, 9, 0, Math.PI * 2);
             ctx.fillStyle = '#22c55e';
             ctx.fill();
             ctx.closePath();
@@ -238,15 +243,29 @@
             metrics.totalFrames++;
             metrics.cumulativeError += distance;
 
-            if (distance <= 30) { // Tolerancia ampliada un poco por el margen de error normal de las webcams comunes
+            if (distance <= 25) {
                 metrics.optimalFrames++;
             }
 
-            const optimalPct = ((metrics.optimalFrames / metrics.totalFrames) * 100).toFixed(1);
-            const avgError = (metrics.cumulativeError / metrics.totalFrames).toFixed(1);
+            const elapsed = (Date.now() - startTime) / 1000;
+            if (elapsed < 3 && metrics.initialErrorBlock === null) {
+                metrics.initialErrorBlock = distance;
+            }
+            if (elapsed > 20 && metrics.finalErrorBlock === null) {
+                metrics.finalErrorBlock = distance;
+            }
+
+            const optimalPct = ((metrics.optimalFrames / metrics.totalFrames) * 100).toFixed(0);
+            const avgError = (metrics.cumulativeError / metrics.totalFrames).toFixed(0);
+            
+            let fatigueIndex = 0;
+            if (metrics.initialErrorBlock && metrics.finalErrorBlock) {
+                fatigueIndex = Math.max(0, ((metrics.finalErrorBlock - metrics.initialErrorBlock) / metrics.initialErrorBlock) * 100).toFixed(0);
+            }
 
             document.getElementById('lblOptimal').innerText = optimalPct + '%';
-            document.getElementById('lblError').innerText = avgError + ' px';
+            document.getElementById('lblError').innerText = avgError + 'px';
+            document.getElementById('lblFatigue').innerText = fatigueIndex + '%';
         }
 
         function loop() {
@@ -257,45 +276,52 @@
             animationId = requestAnimationFrame(loop);
         }
 
-        function startEyeTrackingTest() {
-            document.getElementById('lblStatus').innerText = 'Calibrando / Iniciando';
+        // Manejadores unificados para Mouse y Touch Directo dentro del Canvas
+        function handlePointerMove(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            // Escala las coordenadas reales de la pantalla táctil al tamaño interno del canvas (400x300)
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            gazeX = (clientX - rect.left) * scaleX;
+            gazeY = (clientY - rect.top) * scaleY;
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isRunning) handlePointerMove(e.clientX, e.clientY);
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (isRunning && e.touches.length > 0) {
+                handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, { passive: true });
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (isRunning && e.touches.length > 0) {
+                handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, { passive: true });
+
+        function startTest() {
+            metrics = { totalFrames: 0, optimalFrames: 0, cumulativeError: 0, initialErrorBlock: null, finalErrorBlock: null };
+            startTime = Date.now();
+            isRunning = true;
+            
+            document.getElementById('lblStatus').innerText = 'Estado: En ejecución...';
             document.getElementById('btnStart').disabled = true;
             document.getElementById('btnStop').disabled = false;
-            document.getElementById('msgStatus').innerText = 'Iniciando WebGazer (Mira a la cámara)...';
-
-            // Iniciar WebGazer para leer los ojos mediante la webcam
-            webgazer.setGazeListener((data, elapsedTime) => {
-                if (data == null) {
-                    return;
-                }
-                gazeX = data.x; // Coordenada X de la mirada en pantalla
-                gazeY = data.y; // Coordenada Y de la mirada en pantalla
-            }).begin();
-
-            // Ocultar los puntos de predicción visual nativos de WebGazer para limpiar la interfaz
-            webgazer.showPredictionPoints(false);
-
-            setTimeout(() => {
-                document.getElementById('msgStatus').innerText = 'Prueba en curso (Sigue el punto azul)';
-                document.getElementById('lblStatus').innerText = 'En Ejecución';
-                metrics = { totalFrames: 0, optimalFrames: 0, cumulativeError: 0 };
-                startTime = Date.now();
-                isRunning = true;
-                loop();
-            }, 3000);
+            
+            loop();
         }
 
         function stopTest() {
             isRunning = false;
             cancelAnimationFrame(animationId);
-            try {
-                webgazer.end(); // Apagar la cámara y el proceso de tracking
-            } catch(e) {}
             
-            document.getElementById('lblStatus').innerText = 'Finalizado';
+            document.getElementById('lblStatus').innerText = 'Estado: Prueba finalizada';
             document.getElementById('btnStart').disabled = false;
             document.getElementById('btnStop').disabled = true;
-            document.getElementById('msgStatus').innerText = 'Prueba detenida y datos guardados.';
         }
     </script>
 </body>
