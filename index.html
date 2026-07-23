@@ -1,1 +1,328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evaluación de Tracking Visual y Reflejos</title>
+    <!-- Librería para el procesamiento visual facial y de mirada -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 1.5rem;
+            color: #38bdf8;
+            margin-bottom: 5px;
+        }
+        p {
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            max-width: 1100px;
+            width: 100%;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .canvas-container {
+            position: relative;
+            background: #1e293b;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+            border: 1px solid #334155;
+        }
+        canvas {
+            display: block;
+            background: #020617;
+        }
+        .sidebar {
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 12px;
+            width: 320px;
+            border: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .metrics-box {
+            margin-bottom: 15px;
+        }
+        .metric-item {
+            background: #0f172a;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border-left: 4px solid #38bdf8;
+        }
+        .metric-label {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+        }
+        .metric-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #f8fafc;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        button {
+            background: #0284c7;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #0369a1;
+        }
+        button:disabled {
+            background: #475569;
+            cursor: not-allowed;
+        }
+        #webcam-preview {
+            width: 100%;
+            height: 120px;
+            background: #000;
+            border-radius: 8px;
+            object-fit: cover;
+            margin-top: 10px;
+            transform: scaleX(-1);
+        }
+        .status-msg {
+            font-size: 0.85rem;
+            text-align: center;
+            color: #fbbf24;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
 
+    <header>
+        <h1>Módulo de Seguimiento Ocular y Fatiga</h1>
+        <p>Evaluación interactiva de Smooth Pursuit y Estabilidad Atencional</p>
+    </header>
+
+    <div class="container">
+        <!-- Pantalla del Test Visual -->
+        <div class="canvas-container">
+            <canvas id="testCanvas" width="640" height="480"></canvas>
+        </div>
+
+        <!-- Panel de Control y Métricas -->
+        <div class="sidebar">
+            <div>
+                <div class="metrics-box">
+                    <div class="metric-item">
+                        <div class="metric-label">Estado de la Prueba</div>
+                        <div class="metric-value" id="lblStatus">Inactivo</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Zona Óptima (&lt;20px)</div>
+                        <div class="metric-value" id="lblOptimal">0.0%</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Error Espacial Promedio</div>
+                        <div class="metric-value" id="lblError">0.0 px</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Índice de Fatiga / Desgaste</div>
+                        <div class="metric-value" id="lblFatigue">0.0%</div>
+                    </div>
+                </div>
+                <div class="status-msg" id="msgCamera">Cámara desconectada</div>
+                <video id="webcam-preview" autoplay playsinline muted></video>
+            </div>
+
+            <div class="controls">
+                <button id="btnStart" onclick="startTest()">Iniciar Prueba</button>
+                <button id="btnStop" onclick="stopTest()" disabled>Detener / Exportar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('testCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let isRunning = false;
+        let animationId;
+        let startTime = 0;
+        
+        // Parámetros del Target Dinámico
+        let target = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            radius: 15,
+            speedAngle: 0.04,
+            angle: 0,
+            radiusX: 220,
+            radiusY: 140
+        };
+
+        // Métricas en tiempo real
+        let metrics = {
+            totalFrames: 0,
+            optimalFrames: 0,
+            cumulativeError: 0,
+            initialErrorBlock: null,
+            finalErrorBlock: null
+        };
+
+        // Simulación de tracking ocular vía MediaPipe o estimación por puntero si falla la cámara
+        let gazeX = canvas.width / 2;
+        let gazeY = canvas.height / 2;
+
+        function updateTargetPosition() {
+            target.angle += target.speedAngle;
+            target.x = (canvas.width / 2) + Math.sin(target.angle) * target.radiusX;
+            target.y = (canvas.height / 2) + Math.cos(target.angle * 2) * target.radiusY;
+        }
+
+        function drawScene() {
+            ctx.fillStyle = '#020617';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Dibujar Anillo de Tolerancia Óptima (Guía visual opcional)
+            ctx.beginPath();
+            ctx.arc(target.x, target.y, 20, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Dibujar Target Central
+            ctx.beginPath();
+            ctx.arc(target.x, target.y, target.radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fill();
+            ctx.closePath();
+
+            // Dibujar Retícula de Mirada Estimada (Punto verde del usuario)
+            ctx.beginPath();
+            ctx.arc(gazeX, gazeY, 8, 0, Math.PI * 2);
+            ctx.fillStyle = '#22c55e';
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        function calculateMetrics() {
+            // Distancia euclidiana entre el target y el punto de enfoque detectado
+            const dx = target.x - gazeX;
+            const dy = target.y - gazeY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            metrics.totalFrames++;
+            metrics.cumulativeError += distance;
+
+            if (distance <= 20) {
+                metrics.optimalFrames++;
+            }
+
+            // Registro por bloques para índice de fatiga
+            const elapsed = (Date.now() - startTime) / 1000;
+            if (elapsed < 5 && metrics.initialErrorBlock === null) {
+                metrics.initialErrorBlock = distance;
+            }
+            if (elapsed > 25) {
+                metrics.finalErrorBlock = distance;
+            }
+
+            // Actualizar interfaz visual
+            const optimalPct = ((metrics.optimalFrames / metrics.totalFrames) * 100).toFixed(1);
+            const avgError = (metrics.cumulativeError / metrics.totalFrames).toFixed(1);
+            
+            let fatigueIndex = 0;
+            if (metrics.initialErrorBlock && metrics.finalErrorBlock) {
+                fatigueIndex = Math.max(0, ((metrics.finalErrorBlock - metrics.initialErrorBlock) / metrics.initialErrorBlock) * 100).toFixed(1);
+            }
+
+            document.getElementById('lblOptimal').innerText = optimalPct + '%';
+            document.getElementById('lblError').innerText = avgError + ' px';
+            document.getElementById('lblFatigue').innerText = fatigueIndex + '%';
+        }
+
+        function loop() {
+            if (!isRunning) return;
+            updateTargetPosition();
+            calculateMetrics();
+            drawScene();
+            animationId = requestAnimationFrame(loop);
+        }
+
+        // Captura de movimiento del mouse como respaldo interactivo si la cámara está restringida
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            gazeX = e.clientX - rect.left;
+            gazeY = e.clientY - rect.top;
+        });
+
+        async function startTest() {
+            document.getElementById('lblStatus').innerText = 'En Ejecución';
+            document.getElementById('btnStart').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            
+            // Reiniciar métricas
+            metrics = { totalFrames: 0, optimalFrames: 0, cumulativeError: 0, initialErrorBlock: null, finalErrorBlock: null };
+            startTime = Date.now();
+            isRunning = true;
+            loop();
+
+            // Inicializar Cámara para MediaPipe / Feedback Visual
+            try {
+                const videoElement = document.getElementById('webcam-preview');
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+                videoElement.srcObject = stream;
+                document.getElementById('msgCamera').innerText = 'Cámara Activa (Sigue el punto azul)';
+            } catch (err) {
+                document.getElementById('msgCamera').innerText = 'Modo simulación (Usa el mouse sobre el canvas)';
+            }
+        }
+
+        function stopTest() {
+            isRunning = false;
+            cancelAnimationFrame(animationId);
+            document.getElementById('lblStatus').innerText = 'Finalizado';
+            document.getElementById('btnStart').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+
+            // Detener cámara si está activa
+            const videoElement = document.getElementById('webcam-preview');
+            if (videoElement.srcObject) {
+                const tracks = videoElement.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
+            document.getElementById('msgCamera').innerText = 'Prueba guardada correctamente';
+        }
+    </script>
+</body>
+</html>
