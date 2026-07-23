@@ -1,2 +1,2 @@
-# biofeedback_respiraci-n
-biofeedback_respiración
+# biofeedback_visual
+biofeedback_visual
